@@ -100,7 +100,7 @@ def npyfy(vec):
 
 if __name__ == '__main__':
 
-    datafile = "/Users/jik/data/playlists/500k_playlist_items.csv"
+    datafile = "/Users/jik/data/playlists/10k_playlist_items.csv"
     testsampleproportion = 1000
 
     dimensionality = 1000
@@ -116,36 +116,30 @@ if __name__ == '__main__':
     i = 0
     with open(datafile, 'r') as infile:
         reader = csv.reader(infile, delimiter=",")
-        playlists = list(reader)
-    logger(f"""Finished reading {len(playlists)} items. Now pruning to playlists of length >= {minimumlenghtofplaylistthreshold}""", debug)
-    prev = "dummy"
-    nn = 0
-    thisrun = []
-    prunedlistoftracks = []
+        tracklistcomplete = list(reader)
+    logger(f"""Finished reading {len(tracklistcomplete)} items.""", debug)
     trackfrequency = {}
-    for item in playlists:
-        if not item[playlisturiposition] == prev:
-            if nn > minimumlenghtofplaylistthreshold:
-                prunedlistoftracks += thisrun
-            thisrun = []
-            nn = 0
-        nn += 1
-        prev = item[playlisturiposition]
-        thisrun.append(item)
+    playlistlength = {}
+    for item in tracklistcomplete:
         if item[trackuriposition] in trackfrequency:
             trackfrequency[item[trackuriposition]] += 1
         else:
             trackfrequency[item[trackuriposition]] = 1
-    logger(f"""Number of items down from {len(playlists)} to {len(prunedlistoftracks)} after pruning""", monitor)
+        if item[playlisturiposition] in trackfrequency:
+            playlistlength[item[playlisturiposition]] += 1
+        else:
+            playlistlength[item[playlisturiposition]] = 1
+#    logger(f"""Number of items down from {len(playlists)} to {len(prunedlistoftracks)} after pruning""", monitor)
 
     logger("Start building space without NumPy.", debug)
     tracks = {}
     playlistindexvectors = {}
-    for oneitem in prunedlistoftracks:
+    for oneitem in tracklistcomplete:
         logger(oneitem, debug)
+        playlist = oneitem[playlisturiposition]
         track = oneitem[trackuriposition]
-        if trackfrequency[track] >= 5:
-            playlist = oneitem[playlisturiposition]
+        if trackfrequency[track] >= minimumfrequencyoftrack and \
+                playlistlength[playlist] >= minimumlenghtofplaylistthreshold:
             if playlist not in playlistindexvectors:
                 playlistindexvectors[playlist] = newrandomvector(dimensionality, denseness)
             indexvector = playlistindexvectors[playlist]
@@ -171,10 +165,11 @@ if __name__ == '__main__':
     logger("Start building space with NumPy.", debug)
     tracks = {}
     playlistindexvectors = {}
-    for oneitem in prunedlistoftracks:
+    for oneitem in tracklistcomplete:
         track = oneitem[trackuriposition]
         playlist = oneitem[playlisturiposition]
-        if trackfrequency[track] >= 5:
+        if trackfrequency[track] >= minimumfrequencyoftrack and \
+                playlistlength[playlist] >= minimumlenghtofplaylistthreshold:
             if playlist not in playlistindexvectors:
                 playlistindexvectors[playlist] = newrandomvectornumpy(dimensionality, denseness)
             indexvector = playlistindexvectors[playlist]
