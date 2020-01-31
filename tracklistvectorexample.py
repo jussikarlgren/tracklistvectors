@@ -4,23 +4,11 @@ import math
 import numpy
 from logger import logger
 from sklearn.metrics.pairwise import cosine_distances as cosine
+import csv
+
 debug = True  # for logger
-
-numberofplaylists = 1000
-numberoftracks = 10000
-minimumnumberoftracksperplaylist = 50
-maximumnumberoftracksperplaylist = 200
-dimensionality = 1000
-denseness = 10
-
-
-# simulated data
-playlists = []
-for i in range(numberofplaylists):
-    playlistlength = minimumnumberoftracksperplaylist + \
-                 int(random() * (maximumnumberoftracksperplaylist - minimumnumberoftracksperplaylist))
-    oneplaylist = sample(range(numberoftracks), playlistlength)
-    playlists.append(oneplaylist)
+monitor = True
+error = True
 
 
 # tested this as an alternative to my own simplistic interpretation but this was no faster.
@@ -112,19 +100,57 @@ def npyfy(vec):
 
 if __name__ == '__main__':
 
-    # for every playlist
-    #   generate sparse random index vector for that playlist
-    #   for every song in that playlist
-    #       if not seen, initiate empty context vector
-    #       add the playlist index vector to the context vector
-    testsampleproportion = 500
+    datafile = "/Users/jik/data/playlists/500k_playlist_items.csv"
+    testsampleproportion = 1000
+
+    dimensionality = 1000
+    denseness = 10
+    minimumlenghtofplaylistthreshold = 10  # minimum length of playlist to care
+    minimumfrequencyoftrack = 5  # minimum number of playlists a track appears in
+    # read CSV file & load into list
+    # track_uri,name,popularity_normalized,genres,playlist_uri
+    playlisturiposition = 4
+    trackuriposition = 0
+    tracknameposition = 1
+    logger(f"""Reading {datafile}""", debug)
+    i = 0
+    with open(datafile, 'r') as infile:
+        reader = csv.reader(infile, delimiter=",")
+        playlists = list(reader)
+    logger(f"""Finished reading {len(playlists)} items. Now pruning to playlists of length >= {minimumlenghtofplaylistthreshold}""", debug)
+    prev = "dummy"
+    nn = 0
+    thisrun = []
+    prunedlistoftracks = []
+    trackfrequency = {}
+    for item in playlists:
+        if not item[playlisturiposition] == prev:
+            if nn > minimumlenghtofplaylistthreshold:
+                prunedlistoftracks += thisrun
+            thisrun = []
+            nn = 0
+        nn += 1
+        prev = item[playlisturiposition]
+        thisrun.append(item)
+        if item[trackuriposition] in trackfrequency:
+            trackfrequency[item[trackuriposition]] += 1
+        else:
+            trackfrequency[item[trackuriposition]] = 1
+    logger(f"""Number of items down from {len(playlists)} to {len(prunedlistoftracks)} after pruning""", monitor)
+
     logger("Start building space without NumPy.", debug)
     tracks = {}
-    for oneplaylist in playlists:
-        indexvector = newrandomvector(dimensionality, denseness)
-        for track in oneplaylist:
+    playlistindexvectors = {}
+    for oneitem in prunedlistoftracks:
+        logger(oneitem, debug)
+        track = oneitem[trackuriposition]
+        if trackfrequency[track] >= 5:
+            playlist = oneitem[playlisturiposition]
+            if playlist not in playlistindexvectors:
+                playlistindexvectors[playlist] = newrandomvector(dimensionality, denseness)
+            indexvector = playlistindexvectors[playlist]
             if track not in tracks:
-                contextvector = newrandomvector(dimensionality, denseness)
+                contextvector = {}
             else:
                 contextvector = tracks[track]
             contextvector = sparseadd(contextvector, indexvector)
@@ -132,27 +158,44 @@ if __name__ == '__main__':
     logger("Done building space of {} items without NumPy.".format(len(tracks)), debug)
     samplesize = len(tracks) // testsampleproportion
     testsample = sample(tracks.keys(), samplesize)
+    sparsecosines = []
     for t1 in testsample:
         for t2 in testsample:
             c1 = sparsecosine(tracks[t1], tracks[t2])
-    logger("Done testing distances for {} items against {} items without NumPy.".format(len(testsample), len(tracks)),
-           debug)
+            sparsecosines.append([t1, t2, c1])
+    logger(f"""Done testing distances for {samplesize} items without NumPy.""", debug)
+    with open("/Users/jik/data/tmp/sparsecosines.csv", "w") as cosineoutfile:
+        cosinewriter = csv.writer(cosineoutfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        for c in sparsecosines:
+            cosinewriter.writerow(c)
     logger("Start building space with NumPy.", debug)
     tracks = {}
-    for oneplaylist in playlists:
-        indexvector = newrandomvectornumpy(dimensionality, denseness)
-        for track in oneplaylist:
+    playlistindexvectors = {}
+    for oneitem in prunedlistoftracks:
+        track = oneitem[trackuriposition]
+        playlist = oneitem[playlisturiposition]
+        if trackfrequency[track] >= 5:
+            if playlist not in playlistindexvectors:
+                playlistindexvectors[playlist] = newrandomvectornumpy(dimensionality, denseness)
+            indexvector = playlistindexvectors[playlist]
             if track not in tracks:
-                contextvector = newrandomvectornumpy(dimensionality, denseness)
+                contextvector = numpy.zeros(dimensionality)
             else:
                 contextvector = tracks[track]
             contextvector = contextvector + indexvector
             tracks[track] = contextvector
-    logger("Done building space of {} items without NumPy.".format(len(tracks)), debug)
-# samplesize = len(tracks) // testsampleproportion
-# testsample = sample(tracks.keys(), samplesize)
-# for t1 in testsample:
-#     for t2 in testsample:
-#         c = cosine(tracks[t1], tracks[t2])
-# logger("Done testing distances for {} items against {} items with NumPy.".format(len(testsample), len(tracks)),
-#        debug)
+    logger("Done building space of {} items with NumPy.".format(len(tracks)), debug)
+    samplesize = len(tracks) // testsampleproportion
+    testsample = sample(tracks.keys(), samplesize)
+    numpycosines = []
+    for t1 in testsample:
+        for t2 in testsample:
+            c = cosine([tracks[t1], tracks[t2]])
+            numpycosines.append([t1, t2, c])
+    logger(f"""Done testing distances for {samplesize} items with NumPy.""", debug)
+    with open("/Users/jik/data/tmp/numpycosines.csv", "w") as numpyoutfile:
+        cosinewriter = csv.writer(numpyoutfile, delimiter=' ',
+                            quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        for c in numpycosines:
+            cosinewriter.writerow(c)
+
